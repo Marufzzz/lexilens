@@ -18,38 +18,31 @@ const useStore = create((set, get) => ({
 
   // ─── Auth ───────────────────────────────────────────────
   signUp: async (email, password, username, avatar, apiKey) => {
-    const { data, error } = await supabase.auth.signUp({ email, password })
+    const key = apiKey || import.meta.env.VITE_GEMINI_API_KEY || ''
+
+    // Pass profile data as metadata — trigger will create the full profile
+    // even before email confirmation, so no session is needed
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: { username, avatar, gemini_api_key: key }
+      }
+    })
     if (error) throw error
 
     const userId = data.user?.id
     if (!userId) throw new Error('Signup failed — no user returned')
 
-    const defaultKey = import.meta.env.VITE_GEMINI_API_KEY || ''
-
-    // Create profile
-    await supabase.from('profiles').upsert({
-      id: userId,
-      username,
-      avatar,
-      gemini_api_key: apiKey || defaultKey,
-      current_zone: 1,
-      total_xp: 0,
-      level: 1,
-      streak_count: 0,
-      longest_streak: 0
-    })
-
-    // Init zone progress for zone 1
-    await supabase.from('zone_progress').upsert({
-      user_id: userId,
-      zone_id: 1,
-      streak_days: 0,
-      is_cleared: false
-    }, { onConflict: 'user_id,zone_id', ignoreDuplicates: true })
-
-    // Set user in store and preload profile so app works immediately
-    set({ user: data.user })
-    await get().loadProfile(userId)
+    // If we got a session (email confirm disabled), load profile right away
+    if (data.session) {
+      set({ user: data.user })
+      await get().loadProfile(userId)
+    } else {
+      // No session yet (email confirm required) — profile was created by trigger.
+      // Store the user object so onComplete can proceed.
+      set({ user: data.user })
+    }
 
     return data.user
   },

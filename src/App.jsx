@@ -47,7 +47,12 @@ export default function App() {
     setCameraWord(null)
   }
 
-  const handleOnboardingComplete = () => {
+  const handleOnboardingComplete = async () => {
+    const { user, loadProfile } = useStore.getState()
+    if (user?.id) {
+      // Load profile (it was created by trigger even without email confirmation)
+      await loadProfile(user.id)
+    }
     setAppState('app')
   }
 
