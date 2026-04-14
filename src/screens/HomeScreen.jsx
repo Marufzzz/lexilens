@@ -44,7 +44,7 @@ export default function HomeScreen({ onOpenCamera }) {
   }
 
   return (
-    <div className="screen" style={{ background: 'var(--bg)' }}>
+    <div style={{ background: 'var(--bg)', flex: 1 }}>
       {/* Header - solid white card with orange accents */}
       <div style={{
         background: 'white',

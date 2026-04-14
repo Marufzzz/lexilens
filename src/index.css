@@ -70,9 +70,6 @@ h1, h2, h3, h4 { font-family: 'Baloo 2', cursive; line-height: 1.2; }
 
 .screen {
   flex: 1;
-  overflow-y: auto;
-  overflow-x: hidden;
-  -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
 }
 .screen::-webkit-scrollbar { display: none; }

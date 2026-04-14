@@ -34,10 +34,10 @@ export default function ProfileScreen() {
   ]
 
   return (
-    <div className="screen" style={{ background: 'var(--bg)' }}>
+    <div style={{ background: 'var(--bg)', flex: 1 }}>
       {/* Hero header */}
       <div style={{
-        background: `linear-gradient(135deg, ${zone.color}, ${zone.color}88)`,
+        background: 'linear-gradient(135deg, var(--orange), var(--purple))',
         padding: '28px 20px 36px',
         position: 'relative', overflow: 'hidden'
       }}>

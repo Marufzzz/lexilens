@@ -61,14 +61,14 @@ export default function App() {
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: 'var(--bg)' }}>
-      <div style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
-        <div style={{ display: activeTab === 'home' ? 'block' : 'none', height: '100%' }}>
+      <div style={{ flex: 1, overflow: 'auto', position: 'relative', minHeight: 0 }}>
+        <div style={{ display: activeTab === 'home' ? 'flex' : 'none', flexDirection: 'column', minHeight: '100%' }}>
           <HomeScreen onOpenCamera={openCamera} />
         </div>
-        <div style={{ display: activeTab === 'map' ? 'block' : 'none', height: '100%' }}>
+        <div style={{ display: activeTab === 'map' ? 'flex' : 'none', flexDirection: 'column', minHeight: '100%' }}>
           <MapScreen />
         </div>
-        <div style={{ display: activeTab === 'profile' ? 'block' : 'none', height: '100%' }}>
+        <div style={{ display: activeTab === 'profile' ? 'flex' : 'none', flexDirection: 'column', minHeight: '100%' }}>
           <ProfileScreen />
         </div>
         {activeTab === 'camera' && (

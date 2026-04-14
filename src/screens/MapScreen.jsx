@@ -23,7 +23,7 @@ export default function MapScreen() {
   const selectedProgress = selected !== null ? getZoneProgress(selected + 1) : null
 
   return (
-    <div className="screen" style={{ background: 'var(--bg)' }}>
+    <div style={{ background: 'var(--bg)', flex: 1 }}>
       {/* Header */}
       <div style={{
         padding: '20px 20px 16px',
