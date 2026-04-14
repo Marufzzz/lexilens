@@ -9,8 +9,11 @@ export default function HomeScreen({ onOpenCamera }) {
   const [showCelebration, setShowCelebration] = useState(false)
 
   if (!profile) return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
+    <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', height:'100%', gap:16, padding:24 }}>
       <div className="spinner" />
+      <div style={{ fontSize:14, color:'var(--text-soft)', fontWeight:600, textAlign:'center' }}>
+        Loading your profile...
+      </div>
     </div>
   )
 

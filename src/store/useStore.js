@@ -62,50 +62,52 @@ const useStore = create((set, get) => ({
   loadProfile: async (userId) => {
     set({ loading: true })
     try {
-      const [{ data: profile }, { data: zones }] = await Promise.all([
+      const [profileRes, zonesRes] = await Promise.all([
         supabase.from('profiles').select('*').eq('id', userId).single(),
         supabase.from('zone_progress').select('*').eq('user_id', userId).order('zone_id')
       ])
 
-      // If profile doesn't exist yet, create it with the env var API key
+      let profile = profileRes.data
+      let zones = zonesRes.data || []
+
+      // Profile missing or couldn't be fetched — create a fallback in memory
+      // so the app renders immediately even if DB is unavailable
       if (!profile) {
         const envKey = import.meta.env.VITE_GEMINI_API_KEY || ''
+        // Try to create it (may fail if no session — that's OK, trigger already did it)
         await supabase.from('profiles').upsert({
-          id: userId,
-          username: 'Explorer',
-          avatar: '🦁',
-          gemini_api_key: envKey,
-          current_zone: 1,
-          total_xp: 0,
-          level: 1,
-          streak_count: 0,
-          longest_streak: 0
-        })
+          id: userId, username: 'Explorer', avatar: '🦁',
+          gemini_api_key: envKey, current_zone: 1, total_xp: 0,
+          level: 1, streak_count: 0, longest_streak: 0
+        }).then(() => {}).catch(() => {})
         await supabase.from('zone_progress').upsert({
           user_id: userId, zone_id: 1, streak_days: 0, is_cleared: false
-        }, { onConflict: 'user_id,zone_id' })
-        // Re-fetch
-        const { data: newProfile } = await supabase.from('profiles').select('*').eq('id', userId).single()
-        const { data: newZones } = await supabase.from('zone_progress').select('*').eq('user_id', userId)
-        set({ profile: newProfile, zoneProgress: newZones || [] })
-        return
+        }, { onConflict: 'user_id,zone_id' }).then(() => {}).catch(() => {})
+
+        // Re-fetch or use fallback
+        const { data: fp } = await supabase.from('profiles').select('*').eq('id', userId).single()
+        const { data: fz } = await supabase.from('zone_progress').select('*').eq('user_id', userId)
+        profile = fp || { id: userId, username: 'Explorer', avatar: '🦁', gemini_api_key: envKey, current_zone: 1, total_xp: 0, level: 1, streak_count: 0, longest_streak: 0 }
+        zones = fz || []
       }
 
-      // Ensure the env key is saved if profile has no key
-      if (!profile.gemini_api_key && import.meta.env.VITE_GEMINI_API_KEY) {
-        await supabase.from('profiles').update({ gemini_api_key: import.meta.env.VITE_GEMINI_API_KEY }).eq('id', userId)
-        profile.gemini_api_key = import.meta.env.VITE_GEMINI_API_KEY
+      // Patch missing gemini key from env var
+      if (profile && !profile.gemini_api_key && import.meta.env.VITE_GEMINI_API_KEY) {
+        profile = { ...profile, gemini_api_key: import.meta.env.VITE_GEMINI_API_KEY }
+        supabase.from('profiles').update({ gemini_api_key: import.meta.env.VITE_GEMINI_API_KEY }).eq('id', userId).then(() => {}).catch(() => {})
       }
 
-      set({ profile, zoneProgress: zones || [] })
+      // Always set profile — this unblocks the screens
+      set({ profile, zoneProgress: zones })
 
-      // Check streak continuity
+      // Non-blocking: check streak + load today's session
       if (profile) {
-        await get().checkStreakContinuity(profile)
-        await get().loadTodaySession(userId, profile)
+        get().checkStreakContinuity(profile).catch(() => {})
+        get().loadTodaySession(userId, profile).catch(() => {})
       }
     } catch (e) {
       console.error('loadProfile error', e)
+      // Even on error, clear loading so screens don't spin forever
     } finally {
       set({ loading: false })
     }
