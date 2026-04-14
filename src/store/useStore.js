@@ -21,12 +21,14 @@ const useStore = create((set, get) => ({
     const { data, error } = await supabase.auth.signUp({ email, password })
     if (error) throw error
 
+    const defaultKey = import.meta.env.VITE_GEMINI_API_KEY || ''
+
     // Create profile
     await supabase.from('profiles').upsert({
       id: data.user.id,
       username,
       avatar,
-      gemini_api_key: apiKey,
+      gemini_api_key: apiKey || defaultKey,
       current_zone: 1,
       total_xp: 0,
       level: 1,
@@ -65,6 +67,36 @@ const useStore = create((set, get) => ({
         supabase.from('zone_progress').select('*').eq('user_id', userId).order('zone_id')
       ])
 
+      // If profile doesn't exist yet, create it with the env var API key
+      if (!profile) {
+        const envKey = import.meta.env.VITE_GEMINI_API_KEY || ''
+        await supabase.from('profiles').upsert({
+          id: userId,
+          username: 'Explorer',
+          avatar: '🦁',
+          gemini_api_key: envKey,
+          current_zone: 1,
+          total_xp: 0,
+          level: 1,
+          streak_count: 0,
+          longest_streak: 0
+        })
+        await supabase.from('zone_progress').upsert({
+          user_id: userId, zone_id: 1, streak_days: 0, is_cleared: false
+        }, { onConflict: 'user_id,zone_id' })
+        // Re-fetch
+        const { data: newProfile } = await supabase.from('profiles').select('*').eq('id', userId).single()
+        const { data: newZones } = await supabase.from('zone_progress').select('*').eq('user_id', userId)
+        set({ profile: newProfile, zoneProgress: newZones || [] })
+        return
+      }
+
+      // Ensure the env key is saved if profile has no key
+      if (!profile.gemini_api_key && import.meta.env.VITE_GEMINI_API_KEY) {
+        await supabase.from('profiles').update({ gemini_api_key: import.meta.env.VITE_GEMINI_API_KEY }).eq('id', userId)
+        profile.gemini_api_key = import.meta.env.VITE_GEMINI_API_KEY
+      }
+
       set({ profile, zoneProgress: zones || [] })
 
       // Check streak continuity
@@ -72,6 +104,8 @@ const useStore = create((set, get) => ({
         await get().checkStreakContinuity(profile)
         await get().loadTodaySession(userId, profile)
       }
+    } catch (e) {
+      console.error('loadProfile error', e)
     } finally {
       set({ loading: false })
     }
@@ -120,11 +154,11 @@ const useStore = create((set, get) => ({
       return
     }
 
-    // Generate new session if API key exists
-    if (profile?.gemini_api_key) {
+    // Generate new session — use profile key or default env key
+    const hasKey = profile?.gemini_api_key || import.meta.env.VITE_GEMINI_API_KEY
+    if (hasKey) {
       await get().generateTodayWords(userId, profile)
     } else {
-      // No API key yet — set empty session marker
       set({ todaySession: null })
     }
   },
@@ -132,8 +166,9 @@ const useStore = create((set, get) => ({
   generateTodayWords: async (userId, profile) => {
     set({ loading: true })
     try {
+      const apiKey = profile.gemini_api_key || import.meta.env.VITE_GEMINI_API_KEY || ''
       const words = await generateDailyWords(
-        profile.gemini_api_key,
+        apiKey,
         profile.current_zone,
         profile.level,
         []
@@ -164,7 +199,8 @@ const useStore = create((set, get) => ({
   // ─── Photo Verification ──────────────────────────────────
   submitPhoto: async (wordIndex, imageBase64) => {
     const { profile, todaySession } = get()
-    if (!profile?.gemini_api_key || !todaySession) throw new Error('Not ready')
+    const apiKey = profile?.gemini_api_key || import.meta.env.VITE_GEMINI_API_KEY || ''
+    if (!apiKey || !todaySession) throw new Error('Not ready')
 
     const word = todaySession.words[wordIndex]
     if (word.mastered) return { match: true, confidence: 1, hint: 'Already mastered!' }
@@ -172,7 +208,7 @@ const useStore = create((set, get) => ({
     set({ loading: true })
     try {
       const result = await geminiVerify(
-        profile.gemini_api_key,
+        apiKey,
         imageBase64,
         word.word,
         word.definition

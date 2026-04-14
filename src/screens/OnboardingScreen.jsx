@@ -2,7 +2,8 @@ import { useState } from 'react'
 import { AVATARS } from '../lib/gameData'
 import useStore from '../store/useStore'
 
-const STEPS = ['welcome', 'name', 'avatar', 'account', 'apikey', 'done']
+// Steps: welcome → name → avatar → account → done (API key no longer needed)
+const STEPS = ['welcome', 'name', 'avatar', 'account', 'done']
 
 export default function OnboardingScreen({ onComplete }) {
   const [step, setStep] = useState(0)
@@ -10,10 +11,9 @@ export default function OnboardingScreen({ onComplete }) {
   const [avatar, setAvatar] = useState('🦁')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [apiKey, setApiKey] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const { signUp, signIn } = useStore()
+  const { signUp } = useStore()
 
   const next = () => setStep(s => Math.min(s + 1, STEPS.length - 1))
 
@@ -25,7 +25,9 @@ export default function OnboardingScreen({ onComplete }) {
     setLoading(true)
     setError('')
     try {
-      await signUp(email, password, name, avatar, apiKey)
+      // Use the built-in env var key — no manual entry needed
+      const geminiKey = import.meta.env.VITE_GEMINI_API_KEY || ''
+      await signUp(email, password, name, avatar, geminiKey)
       next()
     } catch (e) {
       setError(e.message || 'Failed to create account. Try again.')
@@ -34,21 +36,11 @@ export default function OnboardingScreen({ onComplete }) {
     }
   }
 
-  const handleSaveApiKey = async () => {
-    if (apiKey && apiKey.length < 10) {
-      setError('That doesn\'t look like a valid API key')
-      return
-    }
-    // Already saved during signup if provided
-    next()
-  }
-
   const STEP_COLORS = [
     'linear-gradient(135deg, #FF6B35, #F15BB5)',
     'linear-gradient(135deg, #9B5DE5, #3A86FF)',
     'linear-gradient(135deg, #06D6A0, #3A86FF)',
     'linear-gradient(135deg, #FFC107, #FF6B35)',
-    'linear-gradient(135deg, #F15BB5, #9B5DE5)',
     'linear-gradient(135deg, #06D6A0, #9B5DE5)'
   ]
 
@@ -61,11 +53,11 @@ export default function OnboardingScreen({ onComplete }) {
       transition: 'background 0.6s ease'
     }}>
       {/* Progress dots */}
-      {step > 0 && step < 5 && (
+      {step > 0 && step < 4 && (
         <div style={{
           display: 'flex', gap: 6, justifyContent: 'center', paddingTop: 20
         }}>
-          {[1,2,3,4].map(i => (
+          {[1,2,3].map(i => (
             <div key={i} style={{
               width: i <= step ? 24 : 8,
               height: 8,
@@ -224,55 +216,8 @@ export default function OnboardingScreen({ onComplete }) {
           </div>
         )}
 
-        {/* API KEY */}
-        {step === 4 && (
-          <div style={{ display: 'flex', flexDirection: 'column', flex: 1, gap: 16 }} className="slide-up">
-            <div style={{ color: 'white', marginTop: 20 }}>
-              <div style={{ fontSize: 48 }}>🤖</div>
-              <h2 style={{ fontSize: 32, fontWeight: 800, marginTop: 8 }}>AI Setup</h2>
-              <p style={{ opacity: 0.85, marginTop: 4, fontSize: 15 }}>
-                LexiLens uses Gemini AI to generate your words and verify your photos
-              </p>
-            </div>
-
-            <div style={{ background: 'rgba(255,255,255,0.15)', borderRadius: 16, padding: 16 }}>
-              <div style={{ color: 'white', fontWeight: 700, marginBottom: 8, fontSize: 14 }}>How to get a FREE API key:</div>
-              {[
-                '1. Go to aistudio.google.com',
-                '2. Sign in with Google',
-                '3. Click "Get API Key"',
-                '4. Copy and paste it below'
-              ].map(s => (
-                <div key={s} style={{ color: 'rgba(255,255,255,0.85)', fontSize: 13, marginBottom: 4 }}>{s}</div>
-              ))}
-            </div>
-
-            <input
-              className="input"
-              placeholder="Paste your Gemini API key..."
-              value={apiKey}
-              onChange={e => setApiKey(e.target.value)}
-            />
-
-            {error && (
-              <div style={{ background: 'rgba(255,255,255,0.2)', color: 'white', padding: '10px 14px', borderRadius: 12, fontSize: 13, fontWeight: 600 }}>
-                ⚠️ {error}
-              </div>
-            )}
-
-            <div style={{ flex: 1 }} />
-            <button
-              className="btn"
-              style={{ background: 'white', color: '#F15BB5', width: '100%', fontSize: 18 }}
-              onClick={handleSaveApiKey}
-            >
-              {apiKey ? "Save & Continue 🎉" : "Skip for now →"}
-            </button>
-          </div>
-        )}
-
         {/* DONE */}
-        {step === 5 && (
+        {step === 4 && (
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1, gap: 24, textAlign: 'center' }} className="bounce-in">
             <div style={{ fontSize: 80 }}>🎉</div>
             <div>
@@ -285,7 +230,7 @@ export default function OnboardingScreen({ onComplete }) {
               <div style={{ fontSize: 32, background: 'rgba(255,255,255,0.2)', borderRadius: 16, padding: '10px 16px' }}>🏠 Zone 1</div>
               <div style={{ fontSize: 32, background: 'rgba(255,255,255,0.2)', borderRadius: 16, padding: '10px 16px' }}>🔥 15 days</div>
             </div>
-            <button className="btn" style={{ background: 'white', color: '#9B5DE5', width: '100%', fontSize: 18 }} onClick={() => {}}>
+            <button className="btn" style={{ background: 'white', color: '#9B5DE5', width: '100%', fontSize: 18 }} onClick={onComplete}>
               Let's Go! 🚀
             </button>
           </div>

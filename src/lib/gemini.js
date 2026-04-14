@@ -1,7 +1,9 @@
 const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent'
+const DEFAULT_KEY = import.meta.env.VITE_GEMINI_API_KEY || ''
 
 const callGemini = async (apiKey, payload) => {
-  const res = await fetch(`${GEMINI_BASE}?key=${apiKey}`, {
+  const key = apiKey || DEFAULT_KEY
+  const res = await fetch(`${GEMINI_BASE}?key=${key}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload)

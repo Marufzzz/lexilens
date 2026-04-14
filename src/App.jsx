@@ -47,8 +47,12 @@ export default function App() {
     setCameraWord(null)
   }
 
+  const handleOnboardingComplete = () => {
+    setAppState('app')
+  }
+
   if (appState === 'splash') return <SplashScreen />
-  if (appState === 'onboarding') return <OnboardingScreen onComplete={() => {}} />
+  if (appState === 'onboarding') return <OnboardingScreen onComplete={handleOnboardingComplete} />
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: 'var(--bg)' }}>
