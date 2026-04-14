@@ -1,20 +1,25 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import useStore from '../store/useStore'
 import WordCard from '../components/WordCard'
 import XPBar from '../components/XPBar'
-import { ZONES, getLevelInfo } from '../lib/gameData'
+import { ZONES } from '../lib/gameData'
 
 export default function HomeScreen({ onOpenCamera }) {
   const { profile, todaySession, zoneProgress, loading, generateTodayWords } = useStore()
   const [autoGenerating, setAutoGenerating] = useState(false)
+  const generatingRef = useRef(false)
 
-  // Auto-generate words as soon as profile + API key are ready and no session exists
+  // Auto-generate words once when profile is ready and no session exists today
   useEffect(() => {
-    if (profile?.gemini_api_key && !todaySession && !loading && !autoGenerating) {
-      setAutoGenerating(true)
-      generateTodayWords(profile.id, profile).finally(() => setAutoGenerating(false))
-    }
-  }, [profile?.id, profile?.gemini_api_key, todaySession, loading])
+    if (!profile?.id || !profile?.gemini_api_key) return
+    if (todaySession || loading || generatingRef.current) return
+    generatingRef.current = true
+    setAutoGenerating(true)
+    generateTodayWords(profile.id, profile).finally(() => {
+      setAutoGenerating(false)
+      generatingRef.current = false
+    })
+  }, [profile?.id, !!todaySession])
 
   if (!profile) return (
     <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', height:'100%', gap:16, padding:24 }}>
@@ -40,70 +45,69 @@ export default function HomeScreen({ onOpenCamera }) {
 
   return (
     <div className="screen" style={{ background: 'var(--bg)' }}>
-      {/* Header */}
+      {/* Header - solid white card with orange accents */}
       <div style={{
-        background: `linear-gradient(135deg, ${zone.color}, ${zone.color}99)`,
-        padding: '20px 20px 28px',
+        background: 'white',
+        padding: '20px 20px 20px',
         position: 'relative',
-        overflow: 'hidden'
+        overflow: 'hidden',
+        borderBottom: '2px solid var(--orange-light)'
       }}>
-        {/* bg decoration */}
+        {/* Orange top strip */}
         <div style={{
-          position: 'absolute', right: -20, top: -20,
-          width: 120, height: 120,
-          background: 'rgba(255,255,255,0.1)',
-          borderRadius: '50%'
+          position: 'absolute', top: 0, left: 0, right: 0, height: 4,
+          background: 'linear-gradient(90deg, var(--orange), var(--pink), var(--purple))'
         }} />
 
         {/* Top row */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', position: 'relative' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
           <div>
-            <div style={{ color: 'rgba(255,255,255,0.85)', fontSize: 13, fontWeight: 600 }}>
+            <div style={{ color: 'var(--text-soft)', fontSize: 13, fontWeight: 600 }}>
               Good {getTimeGreeting()}!
             </div>
-            <h2 style={{ color: 'white', fontSize: 24, fontWeight: 800, marginTop: 2 }}>
+            <h2 style={{ color: 'var(--orange)', fontSize: 24, fontWeight: 800, marginTop: 2, fontFamily: "'Baloo 2', cursive" }}>
               {profile.avatar} {profile.username}
             </h2>
           </div>
 
           {/* Streak badge */}
           <div style={{
-            background: 'rgba(255,255,255,0.2)',
+            background: 'var(--orange-light)',
             borderRadius: 16, padding: '8px 14px',
             display: 'flex', alignItems: 'center', gap: 6,
-            backdropFilter: 'blur(8px)'
+            border: '1.5px solid var(--orange)'
           }}>
-            <span style={{ fontSize: 20, animation: 'streak-fire 1s ease-in-out infinite' }}>🔥</span>
+            <span style={{ fontSize: 20 }}>🔥</span>
             <div>
-              <div style={{ color: 'white', fontSize: 18, fontWeight: 800, lineHeight: 1 }}>
+              <div style={{ color: 'var(--orange)', fontSize: 18, fontWeight: 800, lineHeight: 1 }}>
                 {profile.streak_count || 0}
               </div>
-              <div style={{ color: 'rgba(255,255,255,0.75)', fontSize: 10, fontWeight: 600 }}>day streak</div>
+              <div style={{ color: 'var(--orange-dark)', fontSize: 10, fontWeight: 700 }}>day streak</div>
             </div>
           </div>
         </div>
 
         {/* XP Bar */}
-        <div style={{ marginTop: 16, background: 'rgba(255,255,255,0.15)', borderRadius: 16, padding: '10px 14px' }}>
+        <div style={{ marginTop: 14 }}>
           <XPBar level={profile.level} xp={profile.total_xp} />
         </div>
 
         {/* Zone info */}
         <div style={{
-          marginTop: 14,
-          display: 'flex', justifyContent: 'space-between', alignItems: 'center'
+          marginTop: 12,
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+          background: 'var(--orange-light)', borderRadius: 14, padding: '10px 14px'
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <span style={{ fontSize: 20 }}>{zone.emoji}</span>
             <div>
-              <div style={{ color: 'white', fontWeight: 700, fontSize: 14 }}>Zone {profile.current_zone}: {zone.name}</div>
-              <div style={{ color: 'rgba(255,255,255,0.75)', fontSize: 11 }}>{zone.radius}</div>
+              <div style={{ color: 'var(--orange-dark)', fontWeight: 800, fontSize: 14 }}>Zone {profile.current_zone}: {zone.name}</div>
+              <div style={{ color: 'var(--text-soft)', fontSize: 11 }}>{zone.radius}</div>
             </div>
           </div>
           <div style={{
-            background: 'rgba(255,255,255,0.2)',
-            borderRadius: 10, padding: '4px 10px',
-            color: 'white', fontSize: 12, fontWeight: 700
+            background: 'var(--orange)', borderRadius: 10, padding: '4px 12px',
+            color: 'white', fontSize: 12, fontWeight: 800
           }}>
             Day {streakDays}/15
           </div>
