@@ -156,3 +156,6 @@ const getFallbackWords = (zone) => {
   }
   return (fallbacks[zone] || fallbacks[1]).map(w => ({ ...w, mastered: false, attempts: 0, photo_verified: false }))
 }
+
+// Export fallback words for use when API is rate limited
+export const getFallbackWordsForZone = (zone) => getFallbackWords(zone)

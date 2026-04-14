@@ -155,40 +155,32 @@ const useStore = create((set, get) => ({
       set({ todaySession: session })
       return
     }
-
-    // Generate new session — use profile key or default env key
-    const hasKey = profile?.gemini_api_key || import.meta.env.VITE_GEMINI_API_KEY
-    if (hasKey) {
-      await get().generateTodayWords(userId, profile)
-    } else {
-      set({ todaySession: null })
-    }
+    // Don't auto-generate here — HomeScreen useEffect handles it
+    // This prevents double calls
   },
 
   generateTodayWords: async (userId, profile) => {
-    // Guard: don't generate if session already exists
-    const existing = await supabase
+    // Module-level guard to prevent simultaneous calls
+    if (get()._generating) return
+    set({ _generating: true })
+
+    // Check DB first — session might already exist from a parallel call
+    const { data: existing } = await supabase
       .from('daily_sessions')
-      .select('id')
+      .select('*')
       .eq('user_id', userId)
       .eq('date', TODAY())
       .single()
-    if (existing.data) {
-      // Session already exists — just load it
-      const { data: session } = await supabase
-        .from('daily_sessions')
-        .select('*')
-        .eq('user_id', userId)
-        .eq('date', TODAY())
-        .single()
-      set({ todaySession: session })
+
+    if (existing) {
+      set({ todaySession: existing, _generating: false })
       return
     }
 
     set({ loading: true })
     try {
       const apiKey = profile.gemini_api_key || import.meta.env.VITE_GEMINI_API_KEY || ''
-      if (!apiKey) throw new Error('No API key available')
+      if (!apiKey) throw new Error('No API key')
 
       const words = await generateDailyWords(
         apiKey,
@@ -211,8 +203,8 @@ const useStore = create((set, get) => ({
         .select()
         .single()
 
-      // Handle race condition — if another call already inserted, fetch existing
       if (error?.code === '23505') {
+        // Race — fetch the already-inserted session
         const { data: s } = await supabase.from('daily_sessions').select('*').eq('user_id', userId).eq('date', TODAY()).single()
         set({ todaySession: s })
       } else {
@@ -220,9 +212,25 @@ const useStore = create((set, get) => ({
       }
     } catch (e) {
       console.error('generateTodayWords error:', e)
-      set({ error: 'Could not generate words. Please try again.' })
+      // On rate limit (429) or any error — use fallback words from local data
+      const { getFallbackWordsForZone } = await import('../lib/gemini')
+      const fallbackWords = getFallbackWordsForZone(profile.current_zone || 1)
+      const { data: session } = await supabase
+        .from('daily_sessions')
+        .upsert({
+          user_id: userId,
+          date: TODAY(),
+          zone_id: profile.current_zone,
+          words: fallbackWords,
+          words_completed: 0,
+          xp_earned: 0,
+          is_complete: false
+        }, { onConflict: 'user_id,date' })
+        .select()
+        .single()
+      set({ todaySession: session, error: null })
     } finally {
-      set({ loading: false })
+      set({ loading: false, _generating: false })
     }
   },
 
