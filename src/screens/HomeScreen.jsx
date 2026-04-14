@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import useStore from '../store/useStore'
 import WordCard from '../components/WordCard'
 import XPBar from '../components/XPBar'
@@ -6,7 +6,15 @@ import { ZONES, getLevelInfo } from '../lib/gameData'
 
 export default function HomeScreen({ onOpenCamera }) {
   const { profile, todaySession, zoneProgress, loading, generateTodayWords } = useStore()
-  const [showCelebration, setShowCelebration] = useState(false)
+  const [autoGenerating, setAutoGenerating] = useState(false)
+
+  // Auto-generate words as soon as profile + API key are ready and no session exists
+  useEffect(() => {
+    if (profile?.gemini_api_key && !todaySession && !loading && !autoGenerating) {
+      setAutoGenerating(true)
+      generateTodayWords(profile.id, profile).finally(() => setAutoGenerating(false))
+    }
+  }, [profile?.id, profile?.gemini_api_key, todaySession, loading])
 
   if (!profile) return (
     <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', height:'100%', gap:16, padding:24 }}>
@@ -153,31 +161,26 @@ export default function HomeScreen({ onOpenCamera }) {
             <h3 style={{ fontSize: 18, fontWeight: 800, fontFamily: "'Baloo 2', cursive" }}>
               📸 Photo Quests
             </h3>
-            {loading && <div className="spinner" style={{ width: 18, height: 18 }} />}
+            {(loading || autoGenerating) && <div className="spinner" style={{ width: 18, height: 18 }} />}
           </div>
 
-          {!profile.gemini_api_key && !todaySession && (
+          {/* Auto-generating state */}
+          {(loading || autoGenerating) && !todaySession && (
             <div style={{
-              background: 'white', borderRadius: 20, padding: 20,
-              boxShadow: 'var(--shadow)', textAlign: 'center'
+              background: 'white', borderRadius: 20, padding: 32,
+              textAlign: 'center', boxShadow: 'var(--shadow)'
             }}>
-              <div style={{ fontSize: 48, marginBottom: 12 }}>🤖</div>
-              <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 8 }}>Add your AI key to start!</div>
-              <div style={{ fontSize: 13, color: 'var(--text-soft)', marginBottom: 16 }}>
-                Go to Profile → Settings to add your free Gemini API key
+              <div style={{ fontSize: 40, marginBottom: 12, animation: 'float 2s ease-in-out infinite' }}>🤖</div>
+              <div style={{ fontSize: 15, fontWeight: 700, fontFamily: "'Baloo 2', cursive", marginBottom: 6 }}>
+                AI is picking your words...
+              </div>
+              <div style={{ fontSize: 13, color: 'var(--text-soft)' }}>
+                This takes just a few seconds!
               </div>
             </div>
           )}
 
-          {!todaySession && profile.gemini_api_key && !loading && (
-            <button
-              className="btn btn-primary btn-full"
-              onClick={() => generateTodayWords(profile.id, profile)}
-            >
-              ✨ Generate Today's Words
-            </button>
-          )}
-
+          {/* Word cards */}
           {todaySession?.words?.map((word, i) => (
             <div key={i} style={{ marginBottom: 10 }}>
               <WordCard
@@ -188,18 +191,6 @@ export default function HomeScreen({ onOpenCamera }) {
               />
             </div>
           ))}
-
-          {loading && !todaySession && (
-            <div style={{
-              background: 'white', borderRadius: 20, padding: 32,
-              textAlign: 'center', boxShadow: 'var(--shadow)'
-            }}>
-              <div className="spinner" style={{ margin: '0 auto 16px' }} />
-              <div style={{ fontSize: 14, color: 'var(--text-soft)', fontWeight: 600 }}>
-                AI is picking your words... 🤖
-              </div>
-            </div>
-          )}
         </div>
 
         {/* Zone progress mini-card */}
