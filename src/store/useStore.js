@@ -21,11 +21,14 @@ const useStore = create((set, get) => ({
     const { data, error } = await supabase.auth.signUp({ email, password })
     if (error) throw error
 
+    const userId = data.user?.id
+    if (!userId) throw new Error('Signup failed — no user returned')
+
     const defaultKey = import.meta.env.VITE_GEMINI_API_KEY || ''
 
     // Create profile
     await supabase.from('profiles').upsert({
-      id: data.user.id,
+      id: userId,
       username,
       avatar,
       gemini_api_key: apiKey || defaultKey,
@@ -38,11 +41,15 @@ const useStore = create((set, get) => ({
 
     // Init zone progress for zone 1
     await supabase.from('zone_progress').upsert({
-      user_id: data.user.id,
+      user_id: userId,
       zone_id: 1,
       streak_days: 0,
       is_cleared: false
-    })
+    }, { onConflict: 'user_id,zone_id', ignoreDuplicates: true })
+
+    // Set user in store and preload profile so app works immediately
+    set({ user: data.user })
+    await get().loadProfile(userId)
 
     return data.user
   },
