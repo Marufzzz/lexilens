@@ -96,44 +96,48 @@ Return ONLY a valid JSON array, no other text:
   }
 }
 
-export const verifyPhoto = async (apiKey, imageBase64, word, definition) => {
+export const verifyPhoto = async (apiKey, imageBase64, word, definition, supabaseClient) => {
   const key = apiKey || import.meta.env.VITE_GROQ_API_KEY || ''
   if (!key) return { match: false, confidence: 0, hint: 'No API key configured.' }
 
-  const prompt = `Does this image show a "${word}"? (${definition})
-
-Reply with ONLY this JSON and nothing else:
-{"match": true, "confidence": 0.9, "hint": "Great photo!"}
-
-or
-
-{"match": false, "confidence": 0.1, "hint": "Try again! Look for the ${word}."}`
+  let photoUrl = null
+  let filePath = null
 
   try {
+    // Step 1: Convert base64 to blob and upload to Supabase Storage
+    const byteString = atob(imageBase64)
+    const bytes = new Uint8Array(byteString.length)
+    for (let i = 0; i < byteString.length; i++) bytes[i] = byteString.charCodeAt(i)
+    const blob = new Blob([bytes], { type: 'image/jpeg' })
+
+    filePath = `verify/${Date.now()}-${Math.random().toString(36).slice(2)}.jpg`
+    const { error: uploadError } = await supabaseClient.storage.from('photos').upload(filePath, blob, { contentType: 'image/jpeg' })
+    if (uploadError) throw new Error('Upload failed: ' + uploadError.message)
+
+    const { data: urlData } = supabaseClient.storage.from('photos').getPublicUrl(filePath)
+    photoUrl = urlData.publicUrl
+
+    // Step 2: Send URL to Groq
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), 14000)
 
     const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${key}`
-      },
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
       signal: controller.signal,
       body: JSON.stringify({
-        model: 'meta-llama/llama-4-maverick-17b-128e-instruct',
+        model: 'meta-llama/llama-4-scout-17b-16e-instruct',
         messages: [{
           role: 'user',
           content: [
-            { type: 'text', text: prompt },
-            { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${imageBase64}` } }
+            { type: 'text', text: `Does this image clearly show a "${word}"? (${definition})\n\nReply ONLY with this JSON:\n{"match": true, "confidence": 0.9, "hint": "Great photo!"}\nor\n{"match": false, "confidence": 0.2, "hint": "Try again!"}` },
+            { type: 'image_url', image_url: { url: photoUrl } }
           ]
         }],
         max_tokens: 80,
         temperature: 0.1
       })
     })
-
     clearTimeout(timeout)
 
     if (!res.ok) {
@@ -151,10 +155,13 @@ or
     }
   } catch (e) {
     console.error('Photo verify error:', e.message)
-    if (e.name === 'AbortError') {
-      return { match: false, confidence: 0, hint: 'Verification timed out. Please try again!' }
-    }
+    if (e.name === 'AbortError') return { match: false, confidence: 0, hint: 'Verification timed out. Please try again!' }
     return { match: false, confidence: 0, hint: 'Could not verify photo. Please try again!' }
+  } finally {
+    // Step 3: Always delete the temp photo
+    if (filePath && supabaseClient) {
+      supabaseClient.storage.from('photos').remove([filePath]).catch(() => {})
+    }
   }
 }
 

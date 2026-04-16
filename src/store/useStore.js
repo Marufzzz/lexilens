@@ -263,7 +263,8 @@ const useStore = create((set, get) => ({
         apiKey,
         imageBase64,
         word.word,
-        word.definition
+        word.definition,
+        supabase
       )
 
       const updatedWords = todaySession.words.map((w, i) =>
