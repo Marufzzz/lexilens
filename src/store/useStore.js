@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { supabase } from '../lib/supabase'
-import { generateDailyWords, verifyPhoto as geminiVerify } from '../lib/gemini'
+import { generateDailyWords, verifyPhoto as groqVerify } from '../lib/groq'
 
 const TODAY = () => new Date().toISOString().split('T')[0]
 const YESTERDAY = () => new Date(Date.now() - 86400000).toISOString().split('T')[0]
@@ -18,7 +18,7 @@ const useStore = create((set, get) => ({
 
   // ─── Auth ───────────────────────────────────────────────
   signUp: async (email, password, username, avatar, apiKey) => {
-    const key = apiKey || import.meta.env.VITE_GEMINI_API_KEY || ''
+    const key = apiKey || import.meta.env.VITE_GROQ_API_KEY || ''
 
     // Pass profile data as metadata — trigger will create the full profile
     // even before email confirmation, so no session is needed
@@ -73,7 +73,7 @@ const useStore = create((set, get) => ({
       // Profile missing or couldn't be fetched — create a fallback in memory
       // so the app renders immediately even if DB is unavailable
       if (!profile) {
-        const envKey = import.meta.env.VITE_GEMINI_API_KEY || ''
+        const envKey = import.meta.env.VITE_GROQ_API_KEY || ''
         // Try to create it (may fail if no session — that's OK, trigger already did it)
         await supabase.from('profiles').upsert({
           id: userId, username: 'Explorer', avatar: '🦁',
@@ -92,9 +92,9 @@ const useStore = create((set, get) => ({
       }
 
       // Patch missing gemini key from env var
-      if (profile && !profile.gemini_api_key && import.meta.env.VITE_GEMINI_API_KEY) {
-        profile = { ...profile, gemini_api_key: import.meta.env.VITE_GEMINI_API_KEY }
-        supabase.from('profiles').update({ gemini_api_key: import.meta.env.VITE_GEMINI_API_KEY }).eq('id', userId).then(() => {}).catch(() => {})
+      if (profile && !profile.gemini_api_key && import.meta.env.VITE_GROQ_API_KEY) {
+        profile = { ...profile, gemini_api_key: import.meta.env.VITE_GROQ_API_KEY }
+        supabase.from('profiles').update({ gemini_api_key: import.meta.env.VITE_GROQ_API_KEY }).eq('id', userId).then(() => {}).catch(() => {})
       }
 
       // Always set profile — this unblocks the screens
@@ -179,7 +179,7 @@ const useStore = create((set, get) => ({
 
     set({ loading: true })
     try {
-      const apiKey = profile.gemini_api_key || import.meta.env.VITE_GEMINI_API_KEY || ''
+      const apiKey = profile.gemini_api_key || import.meta.env.VITE_GROQ_API_KEY || ''
       if (!apiKey) throw new Error('No API key')
 
       const words = await generateDailyWords(
@@ -237,7 +237,7 @@ const useStore = create((set, get) => ({
   // ─── Photo Verification ──────────────────────────────────
   submitPhoto: async (wordIndex, imageBase64) => {
     const { profile, todaySession } = get()
-    const apiKey = profile?.gemini_api_key || import.meta.env.VITE_GEMINI_API_KEY || ''
+    const apiKey = profile?.gemini_api_key || import.meta.env.VITE_GROQ_API_KEY || ''
     if (!apiKey || !todaySession) throw new Error('Not ready')
 
     const word = todaySession.words[wordIndex]
@@ -245,7 +245,7 @@ const useStore = create((set, get) => ({
 
     set({ loading: true })
     try {
-      const result = await geminiVerify(
+      const result = await groqVerify(
         apiKey,
         imageBase64,
         word.word,

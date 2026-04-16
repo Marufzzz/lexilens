@@ -23,7 +23,7 @@ export default function OnboardingScreen({ onComplete }) {
     }
     setLoading(true); clearError()
     try {
-      const key = import.meta.env.VITE_GEMINI_API_KEY || ''
+      const key = import.meta.env.VITE_GROQ_API_KEY || ''
       await signUp(email, password, name, avatar, key)
       onComplete()
     } catch (e) {

@@ -171,10 +171,10 @@ export default function ProfileScreen() {
         {/* API Key settings */}
         <div style={{ background: 'white', borderRadius: 18, padding: '16px', boxShadow: 'var(--shadow)' }}>
           <h3 style={{ fontFamily: "'Baloo 2', cursive", fontSize: 17, fontWeight: 700, marginBottom: 4 }}>
-            🤖 AI Settings
+            🤖 AI Settings (Groq)
           </h3>
           <p style={{ fontSize: 12, color: 'var(--text-soft)', marginBottom: 12 }}>
-            Your Gemini API key powers word generation and photo verification
+            Your Groq API key powers word generation and photo verification — 14,400 free calls/day
           </p>
 
           {!editingKey ? (
@@ -217,9 +217,9 @@ export default function ProfileScreen() {
                   {saving ? '...' : '💾 Save'}
                 </button>
               </div>
-              <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer"
+              <a href="https://console.groq.com/keys" target="_blank" rel="noopener noreferrer"
                 style={{ fontSize: 12, color: 'var(--orange)', fontWeight: 600, textAlign: 'center' }}>
-                Get a free API key →
+                Get a free Groq API key →
               </a>
             </div>
           )}
