@@ -1,13 +1,46 @@
 import { useState, useRef, useEffect } from 'react'
 import useStore from '../store/useStore'
 
+// Compress image to max 512px and 70% quality before sending to AI
+const compressImage = (base64) => new Promise((resolve) => {
+  const img = new Image()
+  img.onload = () => {
+    const MAX = 512
+    let { width, height } = img
+    if (width > MAX || height > MAX) {
+      if (width > height) { height = Math.round(height * MAX / width); width = MAX }
+      else { width = Math.round(width * MAX / height); height = MAX }
+    }
+    const canvas = document.createElement('canvas')
+    canvas.width = width
+    canvas.height = height
+    canvas.getContext('2d').drawImage(img, 0, 0, width, height)
+    const compressed = canvas.toDataURL('image/jpeg', 0.7).split(',')[1]
+    resolve(compressed)
+  }
+  img.onerror = () => resolve(base64) // fallback to original
+  img.src = 'data:image/jpeg;base64,' + base64
+})
+
 export default function CameraScreen({ word, onClose }) {
   const [phase, setPhase] = useState('capture') // capture | preview | verifying | result
   const [imageBase64, setImageBase64] = useState(null)
   const [imagePreview, setImagePreview] = useState(null)
   const [result, setResult] = useState(null)
   const inputRef = useRef()
-  const { submitPhoto, loading } = useStore()
+  const timeoutRef = useRef()
+  const { submitPhoto } = useStore()
+
+  // Safety net: if stuck on verifying for >18s, force a timeout result
+  useEffect(() => {
+    if (phase === 'verifying') {
+      timeoutRef.current = setTimeout(() => {
+        setResult({ match: false, confidence: 0, hint: 'Verification timed out. Try again with a clearer photo!' })
+        setPhase('result')
+      }, 18000)
+    }
+    return () => clearTimeout(timeoutRef.current)
+  }, [phase])
 
   if (!word) return null
   const { word: wordData, index } = word
@@ -29,10 +62,14 @@ export default function CameraScreen({ word, onClose }) {
   const handleVerify = async () => {
     setPhase('verifying')
     try {
-      const res = await submitPhoto(index, imageBase64)
+      // Compress image before sending — reduces size from ~3MB to ~50KB
+      const compressed = await compressImage(imageBase64)
+      const res = await submitPhoto(index, compressed)
+      clearTimeout(timeoutRef.current)
       setResult(res)
       setPhase('result')
     } catch (e) {
+      clearTimeout(timeoutRef.current)
       setResult({ match: false, confidence: 0, hint: 'Something went wrong. Please try again!' })
       setPhase('result')
     }
