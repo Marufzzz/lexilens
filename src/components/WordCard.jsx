@@ -67,13 +67,6 @@ export default function WordCard({ word, index, onCamera, delay = 0 }) {
             }}>
               {word.word}
             </span>
-            {word.bangla_hint && (
-              <span style={{
-                fontSize: 12, color: 'var(--text-soft)', fontWeight: 500
-              }}>
-                {word.bangla_hint}
-              </span>
-            )}
           </div>
           <p style={{
             fontSize: 13, color: 'var(--text-soft)',
@@ -85,6 +78,18 @@ export default function WordCard({ word, index, onCamera, delay = 0 }) {
           }}>
             {word.definition}
           </p>
+          {(word.bangla_definition || word.bangla_hint) && (
+            <p style={{
+              fontSize: 12, color: 'var(--purple)',
+              lineHeight: 1.4, marginTop: 3, fontWeight: 500,
+              overflow: expanded ? 'visible' : 'hidden',
+              display: expanded ? 'block' : '-webkit-box',
+              WebkitLineClamp: 1,
+              WebkitBoxOrient: 'vertical'
+            }}>
+              🇧🇩 {word.bangla_definition || word.bangla_hint}
+            </p>
+          )}
         </div>
 
         {/* Camera button OR Check */}

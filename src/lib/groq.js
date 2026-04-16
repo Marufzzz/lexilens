@@ -4,11 +4,20 @@
 
 const GROQ_BASE = 'https://api.groq.com/openai/v1/chat/completions'
 
-const callGroq = async (model, messages, apiKey) => {
+// Timeout wrapper — prevents hanging forever
+const withTimeout = (promise, ms = 15000) =>
+  Promise.race([
+    promise,
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('Request timed out')), ms)
+    )
+  ])
+
+const callGroq = async (model, messages, apiKey, timeoutMs = 15000) => {
   const key = apiKey || import.meta.env.VITE_GROQ_API_KEY || ''
   if (!key) throw new Error('No Groq API key configured')
 
-  const res = await fetch(GROQ_BASE, {
+  const fetchPromise = fetch(GROQ_BASE, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -21,6 +30,8 @@ const callGroq = async (model, messages, apiKey) => {
       temperature: 0.7
     })
   })
+
+  const res = await withTimeout(fetchPromise, timeoutMs)
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({}))
@@ -43,26 +54,26 @@ const ZONE_CONFIG = {
 
 export const generateDailyWords = async (apiKey, zone, level, previousWords = []) => {
   const zoneInfo = ZONE_CONFIG[zone] || ZONE_CONFIG[1]
-  const prevList = previousWords.slice(0, 10).join(', ')
+  const prevList = previousWords.length > 0 ? previousWords.join(', ') : ''
 
   const prompt = `You are LexiLens, a fun English vocabulary teacher for Bangladeshi school students.
-Generate exactly 5 English vocabulary words for a student at:
+Generate exactly 5 UNIQUE English vocabulary words for a student at:
 - Zone ${zone} (${zoneInfo.name}): Words must be objects findable within ${zoneInfo.radius}
 - Locations: ${zoneInfo.locations}
-- Student level: ${level} (${level <= 5 ? 'beginner - use simple concrete nouns' : level <= 15 ? 'elementary - use descriptive words' : 'intermediate - use varied vocabulary'})
-${prevList ? `- Avoid these recently used words: ${prevList}` : ''}
+- Student level: ${level} (${level <= 5 ? 'beginner - simple concrete nouns' : level <= 15 ? 'elementary - descriptive words' : 'intermediate - varied vocabulary'})
+${prevList ? `- MUST NOT use any of these already-seen words: ${prevList}` : ''}
 
 Rules:
 - Words must be VISIBLE physical objects the student can photograph
-- Use simple, common English words appropriate for the level
 - Each word must genuinely exist in the specified locations
+- "bangla_definition" must be a FULL DEFINITION in Bengali explaining what the word means (not just a translation)
 
 Return ONLY a valid JSON array, no other text:
 [
   {
     "word": "kettle",
     "definition": "A container used to boil water, usually made of metal",
-    "bangla_hint": "কেটলি",
+    "bangla_definition": "একটি ধাতব পাত্র যা পানি গরম করতে ব্যবহার করা হয়, সাধারণত রান্নাঘরে ব্যবহৃত হয়",
     "emoji": "🫖",
     "where_to_find": "In the kitchen near the stove",
     "difficulty": 1
@@ -72,7 +83,7 @@ Return ONLY a valid JSON array, no other text:
   try {
     const text = await callGroq('llama-3.3-70b-versatile', [
       { role: 'user', content: prompt }
-    ], apiKey)
+    ], apiKey, 20000)
 
     const words = JSON.parse(text)
     return words.slice(0, 5).map(w => ({
@@ -82,7 +93,7 @@ Return ONLY a valid JSON array, no other text:
       photo_verified: false
     }))
   } catch (e) {
-    console.error('Groq word generation failed:', e)
+    console.error('Word generation failed:', e)
     return getFallbackWords(zone)
   }
 }
@@ -114,12 +125,17 @@ Respond ONLY with valid JSON, no other text:
           { type: 'text', text: prompt }
         ]
       }
-    ], apiKey)
+    ], apiKey, 15000)
 
-    return JSON.parse(text)
+    const result = JSON.parse(text)
+    return result
   } catch (e) {
-    console.error('Groq photo verification failed:', e)
-    return { match: false, confidence: 0, hint: "I couldn't process your photo. Please try again!" }
+    console.error('Groq photo verification failed:', e.message)
+    // On timeout or error — give benefit of doubt with a gentle message
+    if (e.message.includes('timed out')) {
+      return { match: false, confidence: 0, hint: "Verification timed out. Please try again with a clearer photo!" }
+    }
+    return { match: false, confidence: 0, hint: "Couldn't process the photo. Please try again!" }
   }
 }
 

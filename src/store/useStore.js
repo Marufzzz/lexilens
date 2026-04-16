@@ -182,11 +182,25 @@ const useStore = create((set, get) => ({
       const apiKey = profile.gemini_api_key || import.meta.env.VITE_GROQ_API_KEY || ''
       if (!apiKey) throw new Error('No API key')
 
+      // Fetch last 30 days of used words so we never repeat them
+      const thirtyDaysAgo = new Date(Date.now() - 30 * 86400000).toISOString().split('T')[0]
+      const { data: pastSessions } = await supabase
+        .from('daily_sessions')
+        .select('words')
+        .eq('user_id', userId)
+        .gte('date', thirtyDaysAgo)
+        .order('date', { ascending: false })
+        .limit(30)
+
+      const usedWords = (pastSessions || [])
+        .flatMap(s => (s.words || []).map(w => w.word))
+        .filter(Boolean)
+
       const words = await generateDailyWords(
         apiKey,
         profile.current_zone,
         profile.level,
-        []
+        usedWords
       )
 
       const { data: session, error } = await supabase
@@ -212,8 +226,8 @@ const useStore = create((set, get) => ({
       }
     } catch (e) {
       console.error('generateTodayWords error:', e)
-      // On rate limit (429) or any error — use fallback words from local data
-      const { getFallbackWordsForZone } = await import('../lib/gemini')
+      // On any error — use fallback words from groq lib
+      const { getFallbackWordsForZone } = await import('../lib/groq')
       const fallbackWords = getFallbackWordsForZone(profile.current_zone || 1)
       const { data: session } = await supabase
         .from('daily_sessions')
