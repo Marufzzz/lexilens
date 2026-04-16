@@ -73,9 +73,7 @@ Return ONLY a valid JSON array, no other text:
   {
     "word": "kettle",
     "definition": "A container used to boil water, usually made of metal",
-    "bangla_definition": "একটি ধাতব পাত্র যা পানি গরম করতে ব্যবহার করা হয়, সাধারণত রান্নাঘরে ব্যবহৃত হয়",
-    "emoji": "🫖",
-    "where_to_find": "In the kitchen near the stove",
+    "bangla_definition": "একটি ধাতব পাত্র যা পানি গরম করার জন্য ব্যবহার করা হয়। এটি সাধারণত রান্নাঘরে চুলার উপর রাখা হয় এবং চা বা গরম পানি তৈরিতে কাজে লাগে।",
     "difficulty": 1
   }
 ]`
@@ -99,43 +97,64 @@ Return ONLY a valid JSON array, no other text:
 }
 
 export const verifyPhoto = async (apiKey, imageBase64, word, definition) => {
-  const prompt = `You are verifying if a student's photo matches an English vocabulary word for a learning game.
+  const key = apiKey || import.meta.env.VITE_GROQ_API_KEY || ''
+  if (!key) return { match: false, confidence: 0, hint: 'No API key configured.' }
 
-Target word: "${word}"
-Meaning: "${definition}"
+  const prompt = `Does this image show a "${word}"? (${definition})
 
-Look carefully at the image. Does it clearly show a "${word}"?
+Reply with ONLY this JSON and nothing else:
+{"match": true, "confidence": 0.9, "hint": "Great photo!"}
 
-Respond ONLY with valid JSON, no other text:
-{
-  "match": true or false,
-  "confidence": 0.0 to 1.0,
-  "hint": "Brief encouraging message in simple English (max 20 words). If wrong, gently hint where to find the object."
-}`
+or
+
+{"match": false, "confidence": 0.1, "hint": "Try again! Look for the ${word}."}`
 
   try {
-    const text = await callGroq('meta-llama/llama-4-scout-17b-16e-instruct', [
-      {
-        role: 'user',
-        content: [
-          {
-            type: 'image_url',
-            image_url: { url: `data:image/jpeg;base64,${imageBase64}` }
-          },
-          { type: 'text', text: prompt }
-        ]
-      }
-    ], apiKey, 15000)
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 14000)
 
-    const result = JSON.parse(text)
-    return result
-  } catch (e) {
-    console.error('Groq photo verification failed:', e.message)
-    // On timeout or error — give benefit of doubt with a gentle message
-    if (e.message.includes('timed out')) {
-      return { match: false, confidence: 0, hint: "Verification timed out. Please try again with a clearer photo!" }
+    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${key}`
+      },
+      signal: controller.signal,
+      body: JSON.stringify({
+        model: 'meta-llama/llama-4-maverick-17b-128e-instruct',
+        messages: [{
+          role: 'user',
+          content: [
+            { type: 'text', text: prompt },
+            { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${imageBase64}` } }
+          ]
+        }],
+        max_tokens: 80,
+        temperature: 0.1
+      })
+    })
+
+    clearTimeout(timeout)
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}))
+      throw new Error(`Groq ${res.status}: ${err?.error?.message || 'error'}`)
     }
-    return { match: false, confidence: 0, hint: "Couldn't process the photo. Please try again!" }
+
+    const data = await res.json()
+    const text = (data.choices?.[0]?.message?.content || '').replace(/```json|```/g, '').trim()
+    const result = JSON.parse(text)
+    return {
+      match: !!result.match,
+      confidence: result.confidence || 0,
+      hint: result.hint || (result.match ? 'Great photo!' : `Keep looking for the ${word}!`)
+    }
+  } catch (e) {
+    console.error('Photo verify error:', e.message)
+    if (e.name === 'AbortError') {
+      return { match: false, confidence: 0, hint: 'Verification timed out. Please try again!' }
+    }
+    return { match: false, confidence: 0, hint: 'Could not verify photo. Please try again!' }
   }
 }
 
