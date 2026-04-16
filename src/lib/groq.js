@@ -96,32 +96,42 @@ Return ONLY a valid JSON array, no other text:
   }
 }
 
-export const verifyPhoto = async (apiKey, imageBase64, word, definition, supabaseClient) => {
+export const verifyPhoto = async (apiKey, imageBase64, word, definition) => {
   const key = apiKey || import.meta.env.VITE_GROQ_API_KEY || ''
   if (!key) return { match: false, confidence: 0, hint: 'No API key configured.' }
 
-  let photoUrl = null
-  let filePath = null
+  const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
+  const SUPABASE_ANON = import.meta.env.VITE_SUPABASE_ANON_KEY
+  const filePath = `verify/${Date.now()}-${Math.random().toString(36).slice(2)}.jpg`
+  const publicUrl = `${SUPABASE_URL}/storage/v1/object/public/photos/${filePath}`
 
   try {
-    // Step 1: Convert base64 to blob and upload to Supabase Storage
+    // Convert base64 to blob
     const byteString = atob(imageBase64)
     const bytes = new Uint8Array(byteString.length)
     for (let i = 0; i < byteString.length; i++) bytes[i] = byteString.charCodeAt(i)
     const blob = new Blob([bytes], { type: 'image/jpeg' })
 
-    filePath = `verify/${Date.now()}-${Math.random().toString(36).slice(2)}.jpg`
-    const { error: uploadError } = await supabaseClient.storage.from('photos').upload(filePath, blob, { contentType: 'image/jpeg' })
-    if (uploadError) throw new Error('Upload failed: ' + uploadError.message)
+    // Upload via REST API (works without user session)
+    const uploadRes = await fetch(`${SUPABASE_URL}/storage/v1/object/photos/${filePath}`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${SUPABASE_ANON}`,
+        'Content-Type': 'image/jpeg',
+        'x-upsert': 'true'
+      },
+      body: blob
+    })
+    if (!uploadRes.ok) {
+      const e = await uploadRes.json().catch(() => ({}))
+      throw new Error('Upload failed: ' + (e.message || uploadRes.status))
+    }
 
-    const { data: urlData } = supabaseClient.storage.from('photos').getPublicUrl(filePath)
-    photoUrl = urlData.publicUrl
-
-    // Step 2: Send URL to Groq
+    // Call Groq with public URL
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), 14000)
 
-    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
       signal: controller.signal,
@@ -130,38 +140,39 @@ export const verifyPhoto = async (apiKey, imageBase64, word, definition, supabas
         messages: [{
           role: 'user',
           content: [
-            { type: 'text', text: `Does this image clearly show a "${word}"? (${definition})\n\nReply ONLY with this JSON:\n{"match": true, "confidence": 0.9, "hint": "Great photo!"}\nor\n{"match": false, "confidence": 0.2, "hint": "Try again!"}` },
-            { type: 'image_url', image_url: { url: photoUrl } }
+            { type: 'text', text: `Does this image show a "${word}"?\nReply ONLY with JSON: {"match":true,"confidence":0.9,"hint":"Great!"}` },
+            { type: 'image_url', image_url: { url: publicUrl } }
           ]
         }],
-        max_tokens: 80,
+        max_tokens: 60,
         temperature: 0.1
       })
     })
     clearTimeout(timeout)
 
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}))
-      throw new Error(`Groq ${res.status}: ${err?.error?.message || 'error'}`)
+    if (!groqRes.ok) {
+      const e = await groqRes.json().catch(() => ({}))
+      throw new Error(`Groq ${groqRes.status}: ${e?.error?.message || 'error'}`)
     }
 
-    const data = await res.json()
+    const data = await groqRes.json()
     const text = (data.choices?.[0]?.message?.content || '').replace(/```json|```/g, '').trim()
     const result = JSON.parse(text)
     return {
       match: !!result.match,
-      confidence: result.confidence || 0,
-      hint: result.hint || (result.match ? 'Great photo!' : `Keep looking for the ${word}!`)
+      confidence: Number(result.confidence) || 0,
+      hint: result.hint || (result.match ? 'Great photo!' : `Try again! Look for the ${word}.`)
     }
   } catch (e) {
     console.error('Photo verify error:', e.message)
-    if (e.name === 'AbortError') return { match: false, confidence: 0, hint: 'Verification timed out. Please try again!' }
-    return { match: false, confidence: 0, hint: 'Could not verify photo. Please try again!' }
+    if (e.name === 'AbortError') return { match: false, confidence: 0, hint: 'Timed out. Please try again!' }
+    return { match: false, confidence: 0, hint: 'Could not verify. Please try again!' }
   } finally {
-    // Step 3: Always delete the temp photo
-    if (filePath && supabaseClient) {
-      supabaseClient.storage.from('photos').remove([filePath]).catch(() => {})
-    }
+    // Delete temp photo silently
+    fetch(`${SUPABASE_URL}/storage/v1/object/photos/${filePath}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${SUPABASE_ANON}` }
+    }).catch(() => {})
   }
 }
 
