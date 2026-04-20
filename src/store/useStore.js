@@ -160,11 +160,9 @@ const useStore = create((set, get) => ({
   },
 
   generateTodayWords: async (userId, profile) => {
-    // Module-level guard to prevent simultaneous calls
     if (get()._generating) return
     set({ _generating: true })
 
-    // Check DB first — session might already exist from a parallel call
     const { data: existing } = await supabase
       .from('daily_sessions')
       .select('*')
@@ -182,26 +180,32 @@ const useStore = create((set, get) => ({
       const apiKey = profile.gemini_api_key || import.meta.env.VITE_GROQ_API_KEY || ''
       if (!apiKey) throw new Error('No API key')
 
-      // Fetch last 30 days of used words so we never repeat them
-      const thirtyDaysAgo = new Date(Date.now() - 30 * 86400000).toISOString().split('T')[0]
+      // Fetch ALL past words ever used by this user (not just 30 days)
       const { data: pastSessions } = await supabase
         .from('daily_sessions')
         .select('words')
         .eq('user_id', userId)
-        .gte('date', thirtyDaysAgo)
-        .order('date', { ascending: false })
-        .limit(30)
 
-      const usedWords = (pastSessions || [])
-        .flatMap(s => (s.words || []).map(w => w.word))
-        .filter(Boolean)
+      const usedWords = Array.from(new Set(
+        (pastSessions || [])
+          .flatMap(s => (s.words || []).map(w => (w.word || '').toLowerCase()))
+          .filter(Boolean)
+      ))
 
-      const words = await generateDailyWords(
-        apiKey,
-        profile.current_zone,
-        profile.level,
-        usedWords
-      )
+      console.log('[generateTodayWords] Used words count:', usedWords.length)
+
+      let words
+      try {
+        words = await generateDailyWords(apiKey, profile.current_zone, profile.level, usedWords)
+      } catch (e) {
+        console.error('[generateTodayWords] First attempt failed:', e.message)
+        // Retry once with no context, still avoiding used words
+        words = await generateDailyWords(apiKey, profile.current_zone, 1, usedWords)
+      }
+
+      // Filter out any accidentally repeated words (belt and suspenders)
+      const fresh = words.filter(w => !usedWords.includes((w.word || '').toLowerCase()))
+      const finalWords = fresh.length >= 5 ? fresh.slice(0, 5) : words.slice(0, 5)
 
       const { data: session, error } = await supabase
         .from('daily_sessions')
@@ -209,7 +213,7 @@ const useStore = create((set, get) => ({
           user_id: userId,
           date: TODAY(),
           zone_id: profile.current_zone,
-          words,
+          words: finalWords,
           words_completed: 0,
           xp_earned: 0,
           is_complete: false
@@ -218,31 +222,14 @@ const useStore = create((set, get) => ({
         .single()
 
       if (error?.code === '23505') {
-        // Race — fetch the already-inserted session
         const { data: s } = await supabase.from('daily_sessions').select('*').eq('user_id', userId).eq('date', TODAY()).single()
         set({ todaySession: s })
       } else {
         set({ todaySession: session })
       }
     } catch (e) {
-      console.error('generateTodayWords error:', e)
-      // On any error — use fallback words from groq lib
-      const { getFallbackWordsForZone } = await import('../lib/groq')
-      const fallbackWords = getFallbackWordsForZone(profile.current_zone || 1)
-      const { data: session } = await supabase
-        .from('daily_sessions')
-        .upsert({
-          user_id: userId,
-          date: TODAY(),
-          zone_id: profile.current_zone,
-          words: fallbackWords,
-          words_completed: 0,
-          xp_earned: 0,
-          is_complete: false
-        }, { onConflict: 'user_id,date' })
-        .select()
-        .single()
-      set({ todaySession: session, error: null })
+      console.error('[generateTodayWords] All retries failed:', e)
+      set({ error: 'Could not generate words. Please check your connection and try again.' })
     } finally {
       set({ loading: false, _generating: false })
     }
@@ -262,8 +249,7 @@ const useStore = create((set, get) => ({
       const result = await groqVerify(
         apiKey,
         imageBase64,
-        word.word,
-        word.definition
+        word.word
       )
 
       const updatedWords = todaySession.words.map((w, i) =>
