@@ -177,7 +177,8 @@ const useStore = create((set, get) => ({
 
     set({ loading: true })
     try {
-      const apiKey = profile.gemini_api_key || import.meta.env.VITE_GROQ_API_KEY || ''
+      // Always prefer env var key (correct Groq key), fall back to DB value
+      const apiKey = import.meta.env.VITE_GROQ_API_KEY || profile.gemini_api_key || ''
       if (!apiKey) throw new Error('No API key')
 
       // Fetch ALL past words ever used by this user (not just 30 days)
@@ -238,7 +239,8 @@ const useStore = create((set, get) => ({
   // ─── Photo Verification ──────────────────────────────────
   submitPhoto: async (wordIndex, imageBase64) => {
     const { profile, todaySession } = get()
-    const apiKey = profile?.gemini_api_key || import.meta.env.VITE_GROQ_API_KEY || ''
+    // Always prefer env var key (correct Groq key), fall back to DB value
+    const apiKey = import.meta.env.VITE_GROQ_API_KEY || profile?.gemini_api_key || ''
     if (!apiKey || !todaySession) throw new Error('Not ready')
 
     const word = todaySession.words[wordIndex]
